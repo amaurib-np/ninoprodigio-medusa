@@ -1,0 +1,10 @@
+node_modules/
+.next/
+dist/
+.git/
+public/images/
+public/videos/
+public/fonts/
+certificates/
+canvases/
+kickoff-prompt.md

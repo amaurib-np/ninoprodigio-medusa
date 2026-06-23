@@ -1,0 +1,66 @@
+---
+description: Stripe integration conventions for the Medusa backend (payments-only)
+globs: **/*
+alwaysApply: true
+---
+
+
+# Stripe (via Medusa Payment Provider)
+
+> This is NOT the platform's Stripe rule. Here, Stripe is integrated through
+> **Medusa's Stripe payment provider** — payments only. Do not port the
+> platform's Next.js Embedded Checkout / client-mount / Next.js webhook patterns
+> into this repo.
+
+## Scope
+
+- Stripe processes **store payments only**. Catalog, cart, totals, and orders
+  are owned by Medusa.
+- **Membership/subscriptions are NOT handled here** — they stay on the platform's
+  direct-Stripe flow. Medusa v2 has no native subscriptions; do not add them.
+- **TWO Stripe accounts** (see `docs/integration-contract.md` → "Stripe accounts"):
+  register **two Stripe providers** — **Mundo Espiritual** for physical/digital
+  products and **Gedelimbo** for minutes packages. Each has its own keys + webhook
+  secret. Select the provider per cart. Never charge products on Gedelimbo or
+  minutes on Mundo Espiritual. Customers are inherently separate across accounts;
+  identity is keyed by email/`user_external_ids`, not the Stripe customer id.
+
+## Configuration
+
+- Register **both** Stripe providers in `medusa-config.ts` under the Payment
+  Module, with distinct provider ids (e.g. `pp_stripe_mundo`, `pp_stripe_gedelimbo`).
+- Credentials come from env, never hardcoded: `STRIPE_MUNDO_SECRET_KEY` /
+  `STRIPE_MUNDO_WEBHOOK_SECRET` (products) and `STRIPE_GEDELIMBO_SECRET_KEY` /
+  `STRIPE_GEDELIMBO_WEBHOOK_SECRET` (minutes). Prefer **restricted API keys**.
+- Each account needs its **own Stripe webhook endpoint** pointed at Medusa, each
+  verified with its matching webhook secret.
+
+## Payment flow (provider-driven)
+
+The storefront (platform) drives the cart and mounts the **Stripe Payment
+Element**; Medusa's provider creates the PaymentIntent and authorizes/captures.
+
+```
+storefront: create/refresh cart, set address + shipping method
+storefront: initialize payment session (provider "stripe")  -> Medusa creates PaymentIntent -> client_secret
+storefront: <PaymentElement> + confirmPayment(client_secret)
+storefront: POST /store/carts/{id}/complete                 -> Medusa creates the Order
+```
+
+Do not implement custom PaymentIntent creation in this repo outside the provider;
+let the Payment Module own the lifecycle.
+
+## On payment success
+
+- Medusa emits `order.placed`. A subscriber notifies the platform with the
+  agreed payload (including `stripe_payment_intent_id`) per
+  `docs/integration-contract.md`. The platform writes the transaction mirror and
+  CRM sync — do NOT write to Supabase/CRM from here.
+- Order emails (confirmation, shipped) are sent from Medusa via the Resend
+  notification provider.
+
+## Security
+
+- Restricted keys, least privilege; rotate via env, never in code.
+- Always verify webhook signatures.
+- Treat amounts/totals as Medusa-authoritative; never trust client-sent amounts.

@@ -1,0 +1,45 @@
+---
+description: TypeScript guardrails for the Medusa v2 backend
+globs: **/*.ts
+alwaysApply: true
+---
+
+# TypeScript Guardrails (Medusa backend)
+
+> The platform's typescript-guardrails are Next.js/React/next-intl/Sanity
+> specific and do NOT apply here. These are the rules for this Node/Medusa repo.
+
+## General
+
+- Strict TypeScript. Never use `any` — use `unknown` and narrow with type guards.
+- Type all function return values; type arrays as `T[]`, never leave as `any[]`.
+- Validate and type external input (API route bodies, webhook payloads,
+  third-party responses) — do not trust shapes from the network.
+- After editing a `.ts` file, check for type/lint errors and fix them before
+  moving on.
+
+## Medusa v2 framework usage
+
+- Use Medusa v2 framework imports (`@medusajs/framework/*`, `@medusajs/medusa`,
+  `@medusajs/medusa/core-flows`). Do NOT use Medusa v1 APIs.
+- Build features with the correct primitive:
+  - **Module** for custom data models + service (e.g. `minutes`).
+  - **Workflow** (`createWorkflow` / `createStep`) for multi-step logic across
+    modules or external systems; rely on retries + compensation, don't hand-roll.
+  - **Subscriber** for events (`order.placed`); keep it thin and delegate to a
+    workflow.
+  - **API route** under `src/api` for custom endpoints.
+- Prefer existing **core workflows** over calling module services directly;
+  reserve direct service calls for complex customizations.
+- Resolve dependencies via the container; don't instantiate services manually.
+
+## Config & secrets
+
+- All configuration in `medusa-config.ts`. Read secrets from `process.env`;
+  never hardcode keys or model names. Keep `.env.template` in sync.
+
+## Data & money
+
+- Schema changes go through Medusa migrations; never hand-edit applied migrations.
+- Money is in **minor units** (integers). Never use floats for currency.
+- Treat totals as Medusa-authoritative; never trust client-sent amounts.

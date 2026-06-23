@@ -1,0 +1,83 @@
+---
+description: Medusa v2 conventions and integration guardrails for ninoprodigio-medusa
+globs: **/*
+alwaysApply: true
+---
+
+# Medusa v2 Conventions
+
+This repo uses **Medusa v2** (the modular framework: `@medusajs/medusa` +
+`@medusajs/framework`). Do NOT use Medusa v1 patterns. When unsure about the SDK
+surface, check the official Medusa v2 docs rather than guessing — the API evolves.
+
+> **Framework coding rules live in the official `medusa.mdc`** (vendored from
+> medusajs/examples): workflow/step rules, data-model rules, service rules,
+> `MedusaError`, admin JS SDK. Follow those for *how* to write Medusa code. This
+> file covers *project-specific* conventions and integration boundaries. After
+> scaffolding, also install the official agent skills
+> (`npx skills add medusajs/medusa-agent-skills`, plugin `medusa-dev`) — see
+> README "AI tooling".
+
+## Customization building blocks (use the right tool)
+
+- **Module** — custom data models + service for a domain concern (e.g. the
+  future `minutes` module). Modules are isolated and integrated without side
+  effects.
+- **Workflow** — multi-step business logic with built-in retries, rollback
+  (compensation), and long-running/pause support. Use workflows for anything
+  that spans modules or external systems (e.g. the fulfillment pipeline).
+- **Subscriber** — react to events (e.g. `order.placed`). Keep subscribers thin;
+  delegate real work to a workflow.
+- **Scheduled job** — run logic on an interval.
+- **API route** — expose custom endpoints under `src/api`.
+
+Prefer Medusa's existing **core workflows** (`@medusajs/medusa/core-flows`) over
+calling module services directly. Use the module service directly only for
+complex, non-standard customizations.
+
+## Project conventions
+
+- TypeScript, strict. No `any` — narrow `unknown`.
+- Configuration lives in `medusa-config.ts`; register modules/providers there.
+- Provider credentials and secrets come from env vars — never hardcode keys.
+  Keep `.env.template` in sync when adding a new variable.
+- Run with `MEDUSA_WORKER_MODE` set (shared for a single instance).
+- Database changes go through Medusa migrations; never hand-edit applied
+  migrations.
+
+## Providers (match the integration contract)
+
+- **Payment: Stripe** — payments only, **two providers / two accounts** (Mundo
+  Espiritual for products, Gedelimbo for minutes). See `docs/integration-contract.md`.
+- **Fulfillment: GoShippo** — shipping rates + labels. Digital products use a
+  no-shipping profile / digital fulfillment provider.
+- **Notification: Resend** — order emails (confirmation, shipped/tracking) are
+  sent from HERE.
+
+## Catalog rules
+
+- ~250 products with variants; physical and digital.
+- Digital products: no shipping profile so checkout skips shipping.
+- The product **`handle`** is the storefront URL slug and the cross-system key
+  for Sanity editorial linking — treat it as durable; avoid changing handles
+  after launch.
+
+## Integration guardrails (read `docs/integration-contract.md`)
+
+- **Email is the join key** between a Medusa customer and a platform/Supabase
+  user. Support customer find-or-create by email; do not require a Supabase id.
+- On **`order.placed`**, notify the platform (authenticated POST with the shared
+  secret) using the agreed additive payload. Do not write to Supabase/CRM from
+  here directly.
+- Keep cross-repo payloads **additive**; coordinate breaking changes with the
+  platform repo.
+- Do NOT implement here: subscriptions/membership, identity mastering, CRM
+  writes, or the deferred items listed in `project-context`.
+
+## When scaffolding
+
+Bootstrap a clean Medusa v2 app (latest), wire Postgres + Redis, configure the
+three providers above, set up USD region + a stock location + shipping options,
+and add a Dockerfile + docker-compose (local + Coolify) plus Railway notes.
+Confirm the architecture against `docs/architecture.md` before importing the
+real catalog.

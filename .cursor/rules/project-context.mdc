@@ -1,0 +1,63 @@
+---
+description: Project context for the ninoprodigio-medusa commerce backend
+globs: **/*
+alwaysApply: true
+---
+
+# Project Context: ninoprodigio-medusa
+
+## What this repo is
+
+The **headless commerce backend** for ninoprodigio.com, built on **Medusa v2**
+(Node.js + TypeScript). It owns the store: product catalog (with variants),
+inventory, carts, orders, fulfillment, and returns. It exposes Medusa's Store
+and Admin APIs and the Admin dashboard at `/app`.
+
+ninoprodigio.com is the site for "El Nino Prodigio," a celebrity
+astrologer/psychic. The store sells ~250 physical and digital spiritual products
+with variants.
+
+## What this repo is NOT
+
+- **Not the storefront.** The customer-facing site is the separate Next.js
+  platform repo (`ninoprodigio-platform`); it consumes this backend via the
+  Medusa JS SDK. Do not build storefront UI here.
+- **Not membership/subscriptions.** Membership stays on the platform's direct
+  Stripe flow. Medusa v2 has no native subscriptions — do not add subscription
+  billing here.
+- **Not the identity master.** Supabase (platform) owns auth/identity. Map a
+  Medusa customer to a platform user **by email**.
+- **Not the editorial layer.** Product descriptions, galleries, and SEO live in
+  Sanity (platform), linked by product `handle`.
+
+## Boundaries with external services
+
+- **Stripe** = payments only, via Medusa's Stripe provider, on the SAME Stripe
+  account the platform uses.
+- **GoShippo** = shipping rates + labels (fulfillment provider).
+- **Resend** = order emails (notification provider). Order confirmation and
+  shipped/tracking emails are sent from HERE, not the platform.
+- **SpiritualCRM** = downstream; reached indirectly. On `order.placed`, notify
+  the platform, which mirrors the transaction into Supabase and syncs the CRM.
+
+## Source of truth
+
+- This repo: store catalog + orders.
+- Platform/Supabase: users/identity; membership.
+- Sanity: editorial content.
+- Read `docs/integration-contract.md` before changing anything that crosses the
+  repo boundary (events, customer mapping, shared env).
+
+## Decisions
+
+Canonical ADRs live in the platform repo (`docs/adr/`): ADR-024 (this Medusa
+adoption) and ADR-022 (user/customer external-ID mapping). Summaries are in
+`docs/architecture.md` and `docs/integration-contract.md` here.
+
+## Deferred work (do not implement preemptively)
+
+- Supabase as authoritative customer master / flipping CRM sync direction.
+- Migrating membership into Medusa.
+- Retiring the legacy CRM e-commerce module.
+- Minutes-packages crediting (model the catalog for it, but the crediting
+  contract is defined in a later phase).

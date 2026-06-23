@@ -1,0 +1,63 @@
+---
+description: Git conventions for the ninoprodigio-medusa repo
+globs: **/*
+alwaysApply: true
+---
+
+# Git Conventions
+
+Shares the same conventions as the ninoprodigio platform so history and tooling
+stay consistent across both repos.
+
+## Commit Messages (Conventional Commits)
+
+Format:
+
+```
+<type>: <description>
+
+[optional body explaining WHY, not WHAT]
+```
+
+| Type | When to use |
+|---|---|
+| `feat:` | New feature or capability |
+| `fix:` | Bug fix |
+| `docs:` | Documentation only |
+| `chore:` | Maintenance, dependencies, tooling |
+| `refactor:` | Code restructure without behavior change |
+| `perf:` | Performance improvement |
+| `style:` | Formatting only |
+| `test:` | Adding or updating tests |
+| `ci:` | CI/CD configuration |
+| `feat!:` / `fix!:` | Breaking change |
+
+Rules:
+- Description in English, lowercase, imperative mood ("add" not "added").
+- No trailing period; first line under 72 chars.
+- Body explains WHY, not WHAT.
+- Use scope when useful: `feat(fulfillment):`, `fix(payment):`, `feat(minutes):`.
+- NEVER use `chore:`/`docs:` for commits that include functional code — use
+  `feat:`/`fix:`.
+
+Useful scopes for this repo: `catalog`, `cart`, `payment`, `fulfillment`,
+`returns`, `minutes`, `admin`, `subscriber`, `workflow`, `config`.
+
+## Branching & Merge
+
+- Work on feature branches: `feat/...`, `fix/...`, `docs/...`, `chore/...`.
+- Never commit directly to `main`.
+- Merge via PR + **squash merge**; the PR title (Conventional Commits format)
+  becomes the squash commit message. Keep `main` history clean.
+- Never force-push to `main`.
+
+## Cross-repo changes
+
+When a change spans this repo and `ninoprodigio-platform` (e.g. the
+`order.placed` payload or customer mapping in `docs/integration-contract.md`),
+land coordinated PRs and reference the counterpart PR in each description.
+
+## Secrets
+
+Never commit `.env` or any secret. Keep `.env.template` updated when adding a new
+variable. Do not commit Stripe/Shippo/Resend keys.
