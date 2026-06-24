@@ -62,8 +62,9 @@ Suggested payload (stable shape — keep additive):
     ],
     "shipping_address": { /* ... */ },
     "payment": {
-      "provider": "stripe",
-      "stripe_payment_intent_id": "pi_..."   // for the platform's tx mirror
+      "provider_id": "pp_stripe_mundo",      // WHICH Stripe account: pp_stripe_mundo | pp_stripe_gedelimbo
+      "stripe_account": "mundo",             // "mundo" | "gedelimbo" (convenience alias)
+      "stripe_payment_intent_id": "pi_..."   // only resolvable within its own account
     },
     "created_at": "2026-..."
   }
@@ -72,9 +73,15 @@ Suggested payload (stable shape — keep additive):
 
 What the platform does on receipt (for reference; implemented in the platform):
 - Resolve the user by email (or store as a guest order).
-- Insert a mirror row into `transactions` (or `guest_orders`).
+- Insert a mirror row into `transactions` (or `guest_orders`), recording
+  `stripe_account` so the `pi_...` is reconciled against the correct Stripe
+  account (Mundo Espiritual vs Gedelimbo — they are separate accounts).
 - Enqueue `create_transaction` into Supabase `sync_queue` -> SpiritualCRM.
 - Trigger any portal-side notifications it owns.
+
+> The subscriber/workflow should be **idempotent + retryable**: use Medusa's
+> workflow retries and send the Medusa `order.id` as an idempotency key so the
+> platform can dedupe duplicate deliveries.
 
 > Order **emails** (confirmation, shipped/tracking) are sent by **Medusa** via
 > Resend, not by the platform. Keep these responsibilities distinct to avoid
@@ -87,6 +94,50 @@ credit the minutes balance. The platform/CRM owns the balance today, so the
 contract for crediting minutes will be defined when that phase starts. Until
 then, just ensure minutes products are modeled so they are identifiable
 (e.g., product `metadata.type = "minutes"` and a `minutes` quantity).
+
+## Product content sync (Medusa -> Sanity)
+
+Two teams author product data in two tools: **support/sales** create products in
+Medusa (commerce data); **marketing** writes descriptions and curates the gallery
+in Sanity. Medusa is the trigger; Sanity is the enrichment. Canonical record:
+platform repo `docs/adr/024-commerce-medusa.md` -> "Product content & images".
+
+**This backend owns a `product.*` subscriber** that keeps a Sanity stub in sync:
+
+```
+product.created  -> upsert Sanity `productDescription` stub (by medusaHandle, empty editorial fields)
+product.updated  -> upsert stub if missing (keep marketing's edits; only sync the handle/link)
+product.deleted  -> archive/unpublish the Sanity stub
+```
+
+- **Link key:** the Medusa product `handle` -> Sanity `productDescription.medusaHandle`
+  (1:1; the durable cross-system key — never change handles after launch).
+- The subscriber needs **Sanity write credentials** (project id, dataset, write
+  token, API version) in this repo's env — see the table below.
+- Create at least the **ES** document (the platform uses Sanity's
+  `document-internationalization` plugin; EN is added later, ES is the fallback).
+- The storefront merges Medusa + Sanity by handle and **falls back to Medusa's own
+  fields** when the stub is still empty, so a product is sellable immediately.
+
+> **Import / bulk caveat.** Products arrive from several channels: a **small
+> Shopify import** (~80 products, many inactive — only `status:active` imported),
+> plus **manual admin entry** and an **Excel/CSV import** that together build the
+> ~250-product catalog. Each `product.created` event hits this subscriber, so it
+> MUST be **idempotent** (upsert by handle — no duplicate stubs on re-runs). An
+> Excel batch can still create many products at once, so **respect Sanity API rate
+> limits** (batch/throttle) or skip per-event creation during a bulk load and
+> generate stubs in a single controlled post-import batch script.
+
+### Images: two-tier (do NOT store the full gallery in Medusa)
+
+| Tier | Stored in | Purpose | Owner |
+|---|---|---|---|
+| Base / thumbnail | **Medusa File Module** (local dev, managed **S3** on Cloud) | Admin, cart/order/email thumbnails, storefront **fallback** | Shopify import populates it |
+| Curated gallery | **Sanity** (asset CDN + transforms) | Public PDP gallery | Marketing |
+
+The Shopify importer re-uploads source images to the Medusa File Module (base
+tier). Marketing later curates the PDP gallery in Sanity. The storefront prefers
+the Sanity gallery and falls back to Medusa base images.
 
 ## Shared / required environment
 
@@ -102,6 +153,10 @@ Medusa side (names are conventional; finalize during scaffold):
 | `STRIPE_GEDELIMBO_WEBHOOK_SECRET` | Webhook signing secret — Gedelimbo endpoint |
 | `SHIPPO_API_KEY` | GoShippo |
 | `RESEND_API_KEY` | Order emails |
+| `SANITY_PROJECT_ID` | Sanity project for the `product.*` stub subscriber |
+| `SANITY_DATASET` | Sanity dataset (e.g. `production`) |
+| `SANITY_API_VERSION` | Sanity API version (e.g. `2025-01-01`) |
+| `SANITY_WRITE_TOKEN` | Sanity token with **write** access (create/patch `productDescription` stubs) |
 | `STORE_CORS` / `ADMIN_CORS` / `AUTH_CORS` | Allowed origins (storefront + admin) |
 | `JWT_SECRET` / `COOKIE_SECRET` | Medusa auth secrets |
 | `PLATFORM_WEBHOOK_URL` | Where to POST `order.placed` |
@@ -110,6 +165,12 @@ Medusa side (names are conventional; finalize during scaffold):
 Platform side (already exists / to add): the Medusa Store API base URL +
 publishable key, plus the shared `PLATFORM_WEBHOOK_SECRET` to verify incoming
 `order.placed` notifications.
+
+> **Publishable key is per sales channel.** Each selling surface (web today;
+> Línea Psíquica / mobile app later) uses its own publishable key scoped to its
+> channel — see `docs/architecture.md` -> "Sales channels". The web storefront
+> uses the key bound to the default (web) channel. New clients get their own key;
+> they do not share the web key.
 
 ## Versioning / change management
 
@@ -128,9 +189,36 @@ Medusa registers TWO Stripe payment providers, one per business account:
 | `pp_stripe_gedelimbo` | Gedelimbo | Minutes packages only |
 
 - Each provider has its own secret/publishable keys and its own webhook signing secret (two webhook endpoints).
-- Select the provider per cart/region: minutes carts → Gedelimbo, product carts → Mundo Espiritual.
 - Membership subscriptions are NOT here — they stay on the platform's direct-Stripe flow (also Gedelimbo). The platform repo's STRIPE_SECRET_KEY is the Gedelimbo account.
 - Canonical record: platform repo `docs/adr/024-commerce-medusa.md` → "Stripe accounts".
+
+### One provider per cart (hard constraint)
+
+A Medusa cart is paid by a **single** payment provider, i.e. a **single Stripe
+account**. Therefore **a cart cannot mix product items (Mundo) with minutes items
+(Gedelimbo)** — that charge cannot be split across two accounts.
+
+- **Rule:** minutes are sold in a **separate, minutes-only cart/checkout** from
+  physical/digital products. The storefront enforces this.
+- **Provider selection:** both providers are enabled on the single USD region;
+  the storefront picks the provider when initializing the payment session —
+  `pp_stripe_gedelimbo` for a minutes-only cart, `pp_stripe_mundo` otherwise.
+- **Backend guard (recommended):** add a validation (cart workflow hook or a
+  check at payment-session creation) that rejects a cart containing both a
+  `metadata.type = "minutes"` item and a non-minutes item, so a mixed cart can
+  never reach payment. At minimum, document the rule until minutes ship.
+- **Status:** minutes are a **later phase** (no minutes products exist yet), so
+  Gedelimbo is **config-only** in this scaffold pass — register it (placeholder
+  keys) but it is not exercised until the minutes module lands. Consider gating
+  its registration on `STRIPE_GEDELIMBO_SECRET_KEY` being present so local/dev
+  boots cleanly without it.
+
+### Webhook paths
+
+Verify the exact per-instance webhook path Medusa generates (it derives from the
+provider id; confirm `pp_stripe_mundo` vs `stripe_mundo` against the installed
+provider version — do not assume). Point each Stripe account's webhook at its
+matching path; a mismatch = silent signature-verification failures.
 
 ```bash
 # Medusa env (one pair per account)

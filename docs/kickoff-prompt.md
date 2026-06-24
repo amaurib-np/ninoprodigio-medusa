@@ -21,9 +21,11 @@ FIRST read these (already in the repo) and follow them:
 
 Then:
 1. Install the official Medusa agent skills: `npx skills add medusajs/medusa-agent-skills`
-   (select the `medusa-dev` plugin skills).
-2. Scaffold a Medusa v2 app with create-medusa-app in this repo (Postgres + Redis,
-   admin at /app, .env.template).
+   (select the `medusa-dev` plugin skills). This project uses Medusa Cloud, so also
+   add the Cloud Docs MCP to .cursor/mcp.json (see README "AI tooling").
+2. Scaffold a Medusa v2 app with create-medusa-app in this repo, using npm
+   (--use-npm; yarn is not installed). Local Postgres + Redis via Docker Compose;
+   admin at /app; .env.template.
 3. Configure providers per docs/integration-contract.md:
    - Stripe with TWO providers — Mundo Espiritual (physical/digital products) and
      Gedelimbo (minutes packages) — each with its own TEST keys + webhook secret
@@ -33,7 +35,9 @@ Then:
      no-shipping profile.
    - Resend (notifications) — order emails are sent from HERE.
    Set up a USD region, a stock location, and shipping options.
-4. Add a Dockerfile + docker-compose (local + Coolify) and Railway deploy notes.
+4. Deployment is Medusa Cloud (push-to-deploy from GitHub): add a local
+   docker-compose for Postgres/Redis, and document the Cloud connect/deploy steps.
+   A Dockerfile + self-host notes (Railway/Coolify) are a no-lock-in fallback only.
 5. STOP and confirm the architecture with me before importing the real ~250-product
    catalog.
 

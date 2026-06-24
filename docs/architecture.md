@@ -32,7 +32,8 @@ flowchart TD
 | Payment processing | **Stripe** (via Medusa providers) | TWO accounts: Mundo Espiritual (products) + Gedelimbo (minutes). See integration-contract |
 | Shipping rates + labels | **GoShippo** (via Medusa fulfillment provider) | |
 | Order emails | **Resend** (via Medusa notification provider) | |
-| Editorial content (descriptions, galleries, SEO) | **Sanity** (platform) | Linked by product `handle` |
+| Base / thumbnail product image | **Medusa** (File Module -> S3 on Cloud) | Admin, cart, emails, storefront fallback; populated by Shopify import |
+| Editorial content + curated gallery + SEO | **Sanity** (platform) | Stub auto-created by this repo's `product.*` subscriber, keyed by `handle` |
 | Auth / identity | **Supabase** (platform) | Medusa customer mapped by email |
 | Membership / subscriptions | **Platform** (direct Stripe) | NOT in Medusa |
 | CRM (client history, minutes balance) | **SpiritualCRM** (platform syncs) | Fed by `order.placed` notification |
@@ -43,9 +44,71 @@ flowchart TD
 - **Digital products have no shipping profile** -> checkout skips the shipping
   step automatically. Digital fulfillment is handled by a fulfillment
   provider/workflow that exposes a download artifact.
-- The product **`handle`** is the storefront URL slug (`/shop/<handle>`). Sanity
-  `productDescription` docs link to the product by `handle` (or a `sanity_id`
-  stored in Medusa product metadata).
+- The product **`handle`** is the storefront URL slug (`/shop/<handle>`) and the
+  single durable cross-system key. Sanity `productDescription` docs link to the
+  product by `handle` (`medusaHandle` field); never change handles after launch.
+
+### Product content sync (two-tier)
+
+Support/sales create products in Medusa; marketing enriches them in Sanity. This
+backend owns a **`product.*` subscriber** that auto-creates/archives a Sanity
+`productDescription` **stub** (keyed by `handle`) on `product.created` /
+`product.updated` / `product.deleted`, so a product is sellable immediately and
+the storefront falls back to Medusa's own fields until marketing fills the stub.
+Images are **two-tier**: base/thumbnail in Medusa (S3), curated gallery in Sanity.
+Needs Sanity write creds in env; must be **idempotent** (upsert by handle) since
+products arrive from several channels — a small Shopify import (~80, mostly
+inactive), manual admin entry, and an Excel/CSV import. See
+`docs/integration-contract.md` -> "Product content sync".
+
+## Sales channels
+
+Medusa is the commerce backend for **all** selling surfaces, not just the public
+web store. A **sales channel** models a selling surface / API client — it is NOT
+geography (that's a region) nor inventory (that's a stock location).
+
+**Convention: one channel per surface, each with its own publishable API key.**
+
+| Channel | Surface | Status |
+|---|---|---|
+| **Web — ninoprodigio.com** | Public storefront (Next.js) — the store **default** | Live (today seeded as `Default Sales Channel`; rename pending — see below) |
+| Línea Psíquica | Phone/psychic-line ordering (e.g. minutes) | Create when the surface is real |
+| Mobile app | Future React Native / PWA client | Create when the surface is real |
+| (others) | Marketplaces, POS, etc. | As needed |
+
+Why this matters (not cosmetic):
+
+- **Publishable key per channel.** Each client (web, app, Línea Psíquica tool) uses
+  its own key, scoped to its channel — independently revocable, with per-key
+  analytics. This is the concrete enabler of the platform's API-first / future RN
+  app goal.
+- **Per-channel product availability.** A product sells only in channels it is
+  **linked** to. Lets us expose e.g. minutes packages only in the Línea Psíquica /
+  app channel, or keep some products web-only.
+- **Order attribution.** Every order carries `sales_channel_id` → revenue/reporting
+  per surface with no hacks.
+- **Per-channel stock locations & promotions/price lists** are also possible (one
+  warehouse today, but the model is ready for more).
+
+**Orthogonality (do not conflate):** channel ≠ region (currency/geo) ≠ Stripe
+account. The Stripe provider is selected **per cart** (see integration-contract
+"Stripe accounts"); a channel may be a *signal* (a Línea Psíquica / app cart of
+minutes → Gedelimbo) but never overrides the one-provider-per-cart rule.
+
+**Naming / robustness.** Because the default reference (`default_sales_channel_id`),
+the publishable-key link, and product↔channel links are all **by id**, renaming a
+channel's label is safe and needs **no re-import**. The only things a rename breaks
+are **name-based lookups**. Therefore: resolve the web channel by
+**`store.default_sales_channel_id`** (or a `SALES_CHANNEL_ID` env), **not** by the
+literal string `"Default Sales Channel"`.
+
+> **Current state / follow-up.** The seed currently creates `Default Sales Channel`
+> and the Shopify import resolves it by that name. Planned follow-up (after the
+> Shopify Cloud import, to keep that one-shot identical to the validated local run):
+> rename the default to **"Web — ninoprodigio.com"** and switch the seed + import to
+> resolve the channel by `default_sales_channel_id`. New surfaces (Línea Psíquica,
+> mobile app) get their own named channel + publishable key when they go live, and
+> products are bulk-linked to them then. Don't pre-create empty channels (YAGNI).
 
 ## Checkout
 
@@ -108,9 +171,17 @@ cutover); do not implement them preemptively:
 
 ## Deployment
 
-- **Railway**: one-click Medusa template (managed Postgres + Redis, auto
-  migrations on deploy, CORS pre-wired), or
-- **Coolify**: Docker Compose (Medusa + Postgres + Redis) on the existing server.
+**Medusa Cloud** (managed PaaS by the Medusa team):
 
-Run with `MEDUSA_WORKER_MODE` set appropriately (shared for a single instance;
-split server/worker when scaling). Admin is served at `/app`.
+- **Develop tier (~$29/mo)** for the build phase — connect the GitHub repo for
+  push-to-deploy, preview environments, managed Postgres + Redis + workers, and
+  the Cloud-gated Docs MCP + Cloud CLI.
+- **Launch tier (~$99/mo)** for production — autoscaling, custom domains,
+  zero-downtime deploys.
+
+Cloud manages worker/server split; `MEDUSA_WORKER_MODE` still applies for local
+and any self-hosted runs. Admin is served at `/app` (custom domain on Launch).
+
+**Local development** runs Postgres + Redis via Docker Compose. **No lock-in:**
+Medusa is MIT-licensed and data is exportable, so self-hosting on Railway
+(one-click template) or Coolify (Docker Compose) remains a documented fallback.

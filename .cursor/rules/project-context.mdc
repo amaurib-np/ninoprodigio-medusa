@@ -27,13 +27,17 @@ with variants.
   billing here.
 - **Not the identity master.** Supabase (platform) owns auth/identity. Map a
   Medusa customer to a platform user **by email**.
-- **Not the editorial layer.** Product descriptions, galleries, and SEO live in
-  Sanity (platform), linked by product `handle`.
+- **Not the editorial layer.** Product *descriptions* and the *curated gallery*
+  live in Sanity (platform), linked by product `handle`. BUT this repo owns the
+  product **base/thumbnail image** (Medusa File Module -> S3) and a **`product.*`
+  subscriber** that auto-creates the Sanity stub. See `docs/integration-contract.md`
+  -> "Product content sync".
 
 ## Boundaries with external services
 
-- **Stripe** = payments only, via Medusa's Stripe provider, on the SAME Stripe
-  account the platform uses.
+- **Stripe** = payments only, via Medusa's Stripe providers — **two accounts**:
+  Mundo Espiritual (products) and Gedelimbo (minutes). One provider per cart; see
+  `docs/integration-contract.md` → "Stripe accounts".
 - **GoShippo** = shipping rates + labels (fulfillment provider).
 - **Resend** = order emails (notification provider). Order confirmation and
   shipped/tracking emails are sent from HERE, not the platform.
@@ -42,9 +46,9 @@ with variants.
 
 ## Source of truth
 
-- This repo: store catalog + orders.
+- This repo: store catalog + orders + product base/thumbnail image.
 - Platform/Supabase: users/identity; membership.
-- Sanity: editorial content.
+- Sanity: editorial content + curated PDP gallery (stub seeded from here).
 - Read `docs/integration-contract.md` before changing anything that crosses the
   repo boundary (events, customer mapping, shared env).
 
