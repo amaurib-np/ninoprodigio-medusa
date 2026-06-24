@@ -39,7 +39,9 @@ What this repo does **not** do:
 
 - Medusa v2 (Node.js + TypeScript), Postgres, Redis
 - Providers: Stripe (payment), GoShippo (fulfillment), Resend (notification)
-- Deploy target: Railway (managed Postgres + Redis) or Docker on a Coolify server
+- Hosting: **Medusa Cloud** — Develop tier for build/preview, Launch tier for
+  production (push-to-deploy from GitHub; managed Postgres + Redis + workers).
+  Local dev runs Postgres + Redis via Docker Compose. No lock-in (MIT + export).
 - Admin dashboard served at `/app`
 
 ## Getting started
@@ -49,22 +51,51 @@ What this repo does **not** do:
 > `.cursor/rules` seeded from the platform context. Use them as the source of
 > truth when scaffolding the Medusa application.
 
-Planned local setup once scaffolded:
+Local setup (npm — yarn is not used in this repo; `.npmrc` sets
+`legacy-peer-deps=true` to resolve Medusa's optional peer pins):
 
 ```bash
 # 1. install
-yarn
+npm install
 
 # 2. configure environment (see docs/integration-contract.md for required vars)
 cp .env.template .env
 
-# 3. start Postgres + Redis (docker compose) and run migrations
-yarn medusa db:migrate
+# 3. start Postgres + Redis and run migrations
+docker compose up -d
+npx medusa db:migrate
 
-# 4. seed an admin user and run
-yarn medusa user -e admin@ninoprodigio.com -p <password>
-yarn dev   # API + admin at /app
+# 4. seed an admin user + store baseline, then run
+npx medusa user -e admin@ninoprodigio.com -p <password>
+npm run seed   # USD region, US stock location, shipping options (no catalog)
+npm run dev    # API + admin at http://localhost:9000/app
 ```
+
+### What's configured
+
+- **Payment (Stripe, two accounts):** `pp_stripe_mundo` (products) is registered
+  when `STRIPE_MUNDO_SECRET_KEY` is set; `pp_stripe_gedelimbo` (minutes, later
+  phase) when `STRIPE_GEDELIMBO_SECRET_KEY` is set. Both attach to the single USD
+  region. Webhook endpoints (route drops the `pp_` prefix):
+  `/hooks/payment/stripe_mundo` and `/hooks/payment/stripe_gedelimbo`.
+- **Cart guard:** a `completeCartWorkflow` + `addToCartWorkflow` validate hook
+  rejects carts mixing minutes with non-minutes items (one Stripe account per
+  cart). See [`src/workflows/hooks/cart-single-provider-guard.ts`](src/workflows/hooks/cart-single-provider-guard.ts).
+- **Fulfillment (GoShippo):** custom v2 provider module at
+  [`src/modules/shippo`](src/modules/shippo) (no maintained first-party provider
+  exists), registered when `SHIPPO_API_KEY` is set. Digital products use a
+  no-shipping `Digital` profile.
+- **Notifications (Resend):** custom provider at [`src/modules/resend`](src/modules/resend)
+  with order-confirmation and shipped templates, registered when `RESEND_API_KEY`
+  is set. Order emails are sent from here, not the platform.
+- **`order.placed`:** an idempotent, retryable subscriber/workflow
+  ([`src/workflows/notify-platform-order-placed.ts`](src/workflows/notify-platform-order-placed.ts))
+  POSTs the additive payload (incl. `payment.provider_id` + `payment.stripe_account`,
+  `order.id` as idempotency key) to the platform.
+
+Deployment is via **Medusa Cloud** (connect the GitHub repo; push-to-deploy).
+Develop tier for preview environments, Launch tier for production. See
+[`docs/deployment.md`](docs/deployment.md).
 
 ## AI tooling (Medusa official)
 
@@ -102,16 +133,16 @@ Medusa ships first-class AI-assistant support. This repo is set up to use it:
   `medusa-dev` also exposes commands: `/medusa-dev:db-migrate`,
   `/medusa-dev:db-generate <module>`, `/medusa-dev:new-user <email> <password>`.
 
-- **MCP docs server (optional).** For live documentation lookups, add the Medusa
-  MCP server to `.cursor/mcp.json`. Note it is gated to **Medusa Cloud**
-  accounts (OAuth / personal access token), so only add it if you use Cloud:
+- **MCP docs server.** This project is on **Medusa Cloud** (Develop tier), which
+  includes the Docs MCP (gated to Cloud accounts). Add it to `.cursor/mcp.json`
+  for live documentation lookups, authenticating with your Cloud token:
 
   ```jsonc
   {
     "mcpServers": {
       "medusa": {
-        "url": "https://docs.medusajs.com/mcp"
-        // add: "headers": { "Authorization": "Bearer <token>" } if required
+        "url": "https://docs.medusajs.com/mcp",
+        "headers": { "Authorization": "Bearer <medusa-cloud-token>" }
       }
     }
   }

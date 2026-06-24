@@ -61,6 +61,16 @@ complex, non-standard customizations.
 - The product **`handle`** is the storefront URL slug and the cross-system key
   for Sanity editorial linking — treat it as durable; avoid changing handles
   after launch.
+- **Images are two-tier:** the base/thumbnail image lives HERE (Medusa File
+  Module -> S3 on Cloud); the curated PDP gallery lives in Sanity. Do not try to
+  store the full gallery in Medusa.
+- **Product content stub:** a `product.*` subscriber upserts a Sanity
+  `productDescription` stub by `handle` (`product.created`/`updated`) and archives
+  it (`product.deleted`). It needs `SANITY_*` write creds from env and MUST be
+  **idempotent** (upsert by handle). Products arrive from several channels (small
+  Shopify import ~80, manual admin entry, Excel/CSV import); an Excel batch can
+  create many at once, so respect Sanity rate limits or use a post-import batch.
+  See `docs/integration-contract.md` -> "Product content sync".
 
 ## Integration guardrails (read `docs/integration-contract.md`)
 
@@ -77,7 +87,8 @@ complex, non-standard customizations.
 ## When scaffolding
 
 Bootstrap a clean Medusa v2 app (latest), wire Postgres + Redis, configure the
-three providers above, set up USD region + a stock location + shipping options,
-and add a Dockerfile + docker-compose (local + Coolify) plus Railway notes.
-Confirm the architecture against `docs/architecture.md` before importing the
-real catalog.
+three providers above, set up USD region + a stock location + shipping options.
+Hosting is **Medusa Cloud** (push-to-deploy from GitHub); add a local
+docker-compose for Postgres/Redis dev. A Dockerfile + self-host notes
+(Railway/Coolify) are a no-lock-in fallback, not the primary target. Confirm the
+architecture against `docs/architecture.md` before importing the real catalog.
