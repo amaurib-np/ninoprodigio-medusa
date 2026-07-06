@@ -159,11 +159,11 @@ Medusa side (names are conventional; finalize during scaffold):
 | `SANITY_WRITE_TOKEN` | Sanity token with **write** access (create/patch `productDescription` stubs) |
 | `STORE_CORS` / `ADMIN_CORS` / `AUTH_CORS` | Allowed origins (storefront + admin) |
 | `JWT_SECRET` / `COOKIE_SECRET` | Medusa auth secrets |
-| `PLATFORM_WEBHOOK_URL` | Where to POST `order.placed` |
-| `PLATFORM_WEBHOOK_SECRET` | Shared secret to authenticate the notification |
+| `WEB_PLATFORM_WEBHOOK_URL` | Where to POST `order.placed` (the Next.js app) |
+| `WEB_PLATFORM_WEBHOOK_SECRET` | Shared secret to authenticate the notification |
 
 Platform side (already exists / to add): the Medusa Store API base URL +
-publishable key, plus the shared `PLATFORM_WEBHOOK_SECRET` to verify incoming
+publishable key, plus the shared `WEB_PLATFORM_WEBHOOK_SECRET` to verify incoming
 `order.placed` notifications.
 
 > **Publishable key is per sales channel.** Each selling surface (web today;
