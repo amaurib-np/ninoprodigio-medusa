@@ -14,12 +14,84 @@ import {
   createTaxRegionsWorkflow,
   linkSalesChannelsToApiKeyWorkflow,
   linkSalesChannelsToStockLocationWorkflow,
+  updateSalesChannelsWorkflow,
   updateStoresWorkflow,
 } from "@medusajs/medusa/core-flows"
+
+/**
+ * The public web storefront sales channel. Medusa bootstraps a channel named
+ * "Default Sales Channel"; we normalize it to this label. New selling surfaces
+ * (Línea Psíquica, mobile app) get their own named channel + publishable key
+ * when they go live. See docs/architecture.md -> "Sales channels".
+ */
+const WEB_SALES_CHANNEL_NAME = "Web — ninoprodigio.com"
 
 export type SeedResult = {
   alreadySeeded: boolean
   publishableKey?: string
+}
+
+/**
+ * Resolves the store's default sales channel by id (the one Medusa bootstraps)
+ * and normalizes its label to {@link WEB_SALES_CHANNEL_NAME}. Resolving by id —
+ * rather than by name — means renaming the channel never produces a duplicate,
+ * and re-running the seed always converges the label. Only creates a channel as
+ * a last resort (a store with no default configured yet).
+ */
+async function resolveAndRenameDefaultSalesChannel(container: MedusaContainer) {
+  const query = container.resolve(ContainerRegistrationKeys.QUERY)
+  const salesChannelModuleService = container.resolve(Modules.SALES_CHANNEL)
+
+  const { data: stores } = await query.graph({
+    entity: "store",
+    fields: ["id", "default_sales_channel_id"],
+  })
+  const defaultId = stores[0]?.default_sales_channel_id
+
+  let channel
+  if (defaultId) {
+    ;[channel] = await salesChannelModuleService.listSalesChannels({
+      id: defaultId,
+    })
+  }
+  // Fallbacks for a store with no default set yet: reuse by the target name,
+  // then the channel Medusa bootstraps, then create it.
+  if (!channel) {
+    ;[channel] = await salesChannelModuleService.listSalesChannels({
+      name: WEB_SALES_CHANNEL_NAME,
+    })
+  }
+  if (!channel) {
+    ;[channel] = await salesChannelModuleService.listSalesChannels({
+      name: "Default Sales Channel",
+    })
+  }
+  if (!channel) {
+    const { result } = await createSalesChannelsWorkflow(container).run({
+      input: {
+        salesChannelsData: [
+          {
+            name: WEB_SALES_CHANNEL_NAME,
+            description: "Public web storefront (ninoprodigio.com)",
+          },
+        ],
+      },
+    })
+    channel = result[0]
+  }
+
+  // Normalize the label (idempotent, by id) so every environment converges.
+  if (channel.name !== WEB_SALES_CHANNEL_NAME) {
+    await updateSalesChannelsWorkflow(container).run({
+      input: {
+        selector: { id: channel.id },
+        update: { name: WEB_SALES_CHANNEL_NAME },
+      },
+    })
+    channel = { ...channel, name: WEB_SALES_CHANNEL_NAME }
+  }
+
+  return channel
 }
 
 /**
@@ -44,36 +116,28 @@ export async function seedStore(
   const link = container.resolve(ContainerRegistrationKeys.LINK)
   const query = container.resolve(ContainerRegistrationKeys.QUERY)
   const fulfillmentModuleService = container.resolve(Modules.FULFILLMENT)
-  const salesChannelModuleService = container.resolve(Modules.SALES_CHANNEL)
+
+  // Resolve the store's default sales channel BY ID and normalize its label to
+  // the web storefront name. Done before the idempotency guard below so the
+  // rename is applied on every seed call (including already-seeded stores, e.g.
+  // Cloud) and — being by id — never creates a duplicate channel.
+  logger.info("Normalizing default sales channel...")
+  const defaultSalesChannel = await resolveAndRenameDefaultSalesChannel(container)
 
   // Idempotency guard: a USD region is the marker that the baseline already ran.
+  // (The sales-channel normalization above still runs on repeat calls.)
   const { data: existingRegions } = await query.graph({
     entity: "region",
     fields: ["id", "currency_code"],
   })
   if (existingRegions.some((r) => r.currency_code === "usd")) {
-    logger.info("Store already seeded (USD region exists); skipping seed.")
+    logger.info(
+      "Store already seeded (USD region exists); channel name normalized; skipping rest."
+    )
     return { alreadySeeded: true }
   }
 
   const countries = ["us"]
-
-  logger.info("Seeding sales channel...")
-  // Reuse the "Default Sales Channel" Medusa bootstraps; only create if missing.
-  // (Creating unconditionally would leave a duplicate channel.)
-  let [defaultSalesChannel] = await salesChannelModuleService.listSalesChannels({
-    name: "Default Sales Channel",
-  })
-  if (!defaultSalesChannel) {
-    const { result } = await createSalesChannelsWorkflow(container).run({
-      input: {
-        salesChannelsData: [
-          { name: "Default Sales Channel", description: "Storefront sales channel" },
-        ],
-      },
-    })
-    defaultSalesChannel = result[0]
-  }
 
   logger.info("Seeding publishable API key...")
   const {
