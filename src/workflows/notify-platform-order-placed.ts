@@ -143,12 +143,12 @@ const sendPlatformNotificationStep = createStep(
   async (payload: OrderPlacedPayload, { container }) => {
     const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
 
-    const url = process.env.PLATFORM_WEBHOOK_URL
-    const secret = process.env.PLATFORM_WEBHOOK_SECRET
+    const url = process.env.WEB_PLATFORM_WEBHOOK_URL
+    const secret = process.env.WEB_PLATFORM_WEBHOOK_SECRET
 
     if (!url || !secret) {
       logger.warn(
-        "PLATFORM_WEBHOOK_URL/SECRET not set; skipping order.placed platform notification."
+        "WEB_PLATFORM_WEBHOOK_URL/SECRET not set; skipping order.placed platform notification."
       )
       return new StepResponse({ skipped: true })
     }

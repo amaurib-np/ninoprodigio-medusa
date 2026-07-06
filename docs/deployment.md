@@ -21,7 +21,7 @@ Cloud builds from source on every push; it does **not** use the `Dockerfile`.
    - `STRIPE_GEDELIMBO_SECRET_KEY`, `STRIPE_GEDELIMBO_WEBHOOK_SECRET` (when minutes ship)
    - `SHIPPO_API_KEY` (+ `SHIPPO_FROM_*`)
    - `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
-   - `PLATFORM_WEBHOOK_URL`, `PLATFORM_WEBHOOK_SECRET`
+   - `WEB_PLATFORM_WEBHOOK_URL`, `WEB_PLATFORM_WEBHOOK_SECRET`
 5. Cloud runs migrations on deploy. To seed the store baseline once, run
    `npm run seed` against the Cloud database (or via the Cloud CLI).
 6. Configure Stripe webhooks (one endpoint per account), pointing at the deployed
