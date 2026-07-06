@@ -5,7 +5,7 @@ import {
   WorkflowResponse,
 } from "@medusajs/framework/workflows-sdk"
 import { ContainerRegistrationKeys } from "@medusajs/framework/utils"
-import { createClient } from "@sanity/client"
+import { buildProductStubDoc, getSanityWriteClient } from "../lib/sanity/product-stub"
 
 export type UpsertSanityStubInput = {
   product_id: string
@@ -42,43 +42,23 @@ const upsertStubStep = createStep(
   async (product: ResolvedProduct, { container }) => {
     const logger = container.resolve(ContainerRegistrationKeys.LOGGER)
 
-    const projectId = process.env.SANITY_PROJECT_ID
-    const dataset = process.env.SANITY_DATASET
-    const token = process.env.SANITY_WRITE_TOKEN
-    const apiVersion = process.env.SANITY_API_VERSION || "2025-01-01"
-
+    const client = getSanityWriteClient()
     // Skip cleanly when unconfigured so local/dev boots without Sanity creds
     // (same pattern as the platform-notification workflow).
-    if (!projectId || !dataset || !token) {
+    if (!client) {
       logger.warn(
         "SANITY_PROJECT_ID/DATASET/WRITE_TOKEN not set; skipping productDescription stub."
       )
       return new StepResponse({ skipped: true, handle: product.handle })
     }
 
-    const client = createClient({
-      projectId,
-      dataset,
-      apiVersion,
-      token,
-      useCdn: false,
-    })
-
-    // Deterministic id keyed by handle so re-runs never duplicate. `.es` because
-    // productDescription uses the document-internationalization plugin; the ES
-    // document is the stub, EN is added later by editors.
-    const docId = `productDescription.${product.handle}.es`
+    const doc = buildProductStubDoc(product.handle)
 
     // createIfNotExists (NOT createOrReplace): seed the stub without ever
     // overwriting marketing's editorial edits on re-runs.
-    await client.createIfNotExists({
-      _id: docId,
-      _type: "productDescription",
-      language: "es",
-      medusaHandle: product.handle,
-    })
+    await client.createIfNotExists(doc)
 
-    return new StepResponse({ skipped: false, handle: product.handle, docId })
+    return new StepResponse({ skipped: false, handle: product.handle, docId: doc._id })
   }
 )
 
