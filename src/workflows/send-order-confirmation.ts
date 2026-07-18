@@ -26,16 +26,21 @@ const sendOrderConfirmationStep = createStep(
 
     const { data } = await query.graph({
       entity: "order",
+      // `items.*` expands the computed item entity (quantity, unit_price,
+      // total, ...); granular fields like `items.quantity` return null/0 for
+      // computed properties, and the `*items` prefix form returns no `items`
+      // key at all when called in-process via `query.graph` (unlike the
+      // Store API HTTP route, which normalizes it). Verified directly against
+      // this container. Same `item_total`/`shipping_total` computed fields.
       fields: [
         "id",
         "display_id",
         "email",
         "currency_code",
         "total",
-        "items.title",
-        "items.quantity",
-        "items.unit_price",
-        "items.total",
+        "item_total",
+        "shipping_total",
+        "items.*",
         "shipping_address.*",
       ],
       filters: { id: input.order_id },

@@ -153,6 +153,7 @@ Medusa side (names are conventional; finalize during scaffold):
 | `STRIPE_GEDELIMBO_WEBHOOK_SECRET` | Webhook signing secret — Gedelimbo endpoint |
 | `SHIPPO_API_KEY` | GoShippo |
 | `RESEND_API_KEY` | Order emails |
+| `STOREFRONT_URL` | Storefront origin for the logo/links inside order emails (falls back to `https://ninoprodigio.com`) |
 | `SANITY_PROJECT_ID` | Sanity project for the `product.*` stub subscriber |
 | `SANITY_DATASET` | Sanity dataset (e.g. `production`) |
 | `SANITY_API_VERSION` | Sanity API version (e.g. `2025-01-01`) |

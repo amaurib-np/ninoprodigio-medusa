@@ -33,16 +33,19 @@ const templates: {
   }
 } = {
   [ResendTemplate.ORDER_PLACED]: {
+    // Order emails are always sent in Spanish for now; per-customer
+    // localization is deferred (requires capturing checkout locale on the
+    // cart/order, see docs/features/ecommerce.md).
     subject: (data) => {
       const order = data.order as { display_id?: number } | undefined
-      return order?.display_id ? `Order #${order.display_id} confirmed` : "Your order is confirmed"
+      return order?.display_id ? `Pedido #${order.display_id} confirmado` : "Tu pedido esta confirmado"
     },
     render: (data) => orderPlacedEmail(data as Parameters<typeof orderPlacedEmail>[0]),
   },
   [ResendTemplate.ORDER_SHIPPED]: {
     subject: (data) => {
       const order = data.order as { display_id?: number } | undefined
-      return order?.display_id ? `Order #${order.display_id} has shipped` : "Your order has shipped"
+      return order?.display_id ? `Tu pedido #${order.display_id} fue enviado` : "Tu pedido fue enviado"
     },
     render: (data) => orderShippedEmail(data as Parameters<typeof orderShippedEmail>[0]),
   },
