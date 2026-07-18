@@ -7,6 +7,7 @@ export type ProductStubDoc = {
   _type: "productDescription"
   language: "es"
   medusaHandle: string
+  medusaThumbnailUrl?: string
 }
 
 /**
@@ -37,16 +38,28 @@ export function getSanityWriteClient(): SanityClient | null {
 /**
  * Builds the `productDescription` stub document for a product handle.
  *
- * Deterministic id keyed by handle so re-runs never duplicate. `.es` because
- * productDescription uses the document-internationalization plugin; the ES
- * document is the stub, EN is added later by editors.
+ * Deterministic id keyed by handle so re-runs never duplicate. It MUST be
+ * dot-free: Sanity treats any document whose `_id` contains a dot as private,
+ * so the public/CDN API silently returns nothing for it. We use dashes and a
+ * `-es` suffix because productDescription uses the document-internationalization
+ * plugin; the ES document is the stub, EN is added later by editors (the plugin
+ * gives EN its own random id, which is already dot-free).
+ *
+ * `medusaThumbnailUrl` is Medusa's own base image (S3), used ONLY for a
+ * legible thumbnail in the Sanity Studio document list — it is not the
+ * public PDP gallery (that's the editorial `images` field, set by marketing).
+ * Being Medusa-owned, it is safe to keep overwriting on every sync.
  */
-export function buildProductStubDoc(handle: string): ProductStubDoc {
+export function buildProductStubDoc(
+  handle: string,
+  thumbnail?: string | null
+): ProductStubDoc {
   return {
-    _id: `productDescription.${handle}.es`,
+    _id: `productDescription-${handle}-es`,
     _type: "productDescription",
     language: "es",
     medusaHandle: handle,
+    ...(thumbnail ? { medusaThumbnailUrl: thumbnail } : {}),
   }
 }
 
@@ -91,15 +104,29 @@ export async function backfillProductStubs(
 
   const { data: products } = await query.graph({
     entity: "product",
-    fields: ["id", "handle"],
+    fields: ["id", "handle", "thumbnail"],
   })
-  const handles = products.map((p) => p.handle).filter((h): h is string => Boolean(h))
+  const withHandle = products
+    .map((p) => ({ handle: p.handle, thumbnail: p.thumbnail as string | null | undefined }))
+    .filter(
+      (p): p is { handle: string; thumbnail: string | null | undefined } =>
+        Boolean(p.handle)
+    )
 
   let committed = 0
-  for (const batch of chunk(handles, CHUNK_SIZE)) {
+  for (const batch of chunk(withHandle, CHUNK_SIZE)) {
     let transaction = client.transaction()
-    for (const handle of batch) {
-      transaction = transaction.createIfNotExists(buildProductStubDoc(handle))
+    for (const product of batch) {
+      const doc = buildProductStubDoc(product.handle, product.thumbnail)
+      // createIfNotExists seeds new stubs; the patch keeps medusaThumbnailUrl
+      // fresh on stubs that already existed (createIfNotExists is a no-op for
+      // those), without touching marketing's editorial fields.
+      transaction = transaction.createIfNotExists(doc)
+      if (doc.medusaThumbnailUrl) {
+        transaction = transaction.patch(doc._id, {
+          set: { medusaThumbnailUrl: doc.medusaThumbnailUrl },
+        })
+      }
     }
     await transaction.commit({ visibility: "async" })
     committed += batch.length
