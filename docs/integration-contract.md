@@ -36,7 +36,34 @@ Medusa    --(event notification)-->  Platform
 - Medusa should allow customer lookup/creation by email and must not require a
   Supabase user id.
 - **Guests**: complete the cart with an email and no customer. The platform
-  reconciles the order to a user if they later register with the same email.
+  reconciles the order to a user if they later register with the same email
+  (magic-link post-order + claim of `guest_orders`).
+
+### Endpoint: `POST /store/link-customer`
+
+Server-only (called from the Next.js platform, never from the browser).
+
+| Header | Required | Notes |
+|--------|----------|-------|
+| `x-publishable-api-key` | yes | Store publishable key (public; scopes sales channel) |
+| `x-platform-secret` | yes | Must equal Medusa `PLATFORM_SHARED_SECRET` (same value as platform `MEDUSA_PLATFORM_SECRET`) |
+
+```jsonc
+// Request body
+{
+  "email": "buyer@example.com",   // join key (normalized to lowercase)
+  "cart_id": "cart_...",          // optional — attach customer to cart when present
+  "first_name": "Amauri",         // optional — used only when creating a new customer
+  "last_name": "Berroa"
+}
+
+// 200 response
+{ "customer": { "id": "cus_...", "email": "buyer@example.com" } }
+```
+
+Idempotent: listing by email first, create only when missing. When `cart_id` is
+set, the cart is updated with `customer_id` + `email` so the completed order
+inherits the customer.
 
 ## Event: `order.placed`
 
@@ -161,6 +188,7 @@ Medusa side (names are conventional; finalize during scaffold):
 | `JWT_SECRET` / `COOKIE_SECRET` | Medusa auth secrets |
 | `WEB_PLATFORM_WEBHOOK_URL` | Where to POST `order.placed` (the Next.js app) |
 | `WEB_PLATFORM_WEBHOOK_SECRET` | Shared secret to authenticate the notification |
+| `PLATFORM_SHARED_SECRET` | Shared secret for platform → Medusa calls (`POST /store/link-customer` via `x-platform-secret`) |
 
 Platform side (already exists / to add): the Medusa Store API base URL +
 publishable key, plus the shared `WEB_PLATFORM_WEBHOOK_SECRET` to verify incoming
