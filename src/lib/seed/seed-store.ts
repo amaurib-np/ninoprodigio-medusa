@@ -208,7 +208,7 @@ export async function seedStore(
     input: {
       locations: [
         {
-          name: "Primary Warehouse",
+          name: "1800 Warehouse",
           address: { city: "Miami", country_code: "US", address_1: "" },
         },
       ],
