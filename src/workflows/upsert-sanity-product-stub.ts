@@ -13,6 +13,7 @@ export type UpsertSanityStubInput = {
 
 type ResolvedProduct = {
   handle: string
+  thumbnail?: string | null
 }
 
 const resolveProductStep = createStep(
@@ -22,7 +23,7 @@ const resolveProductStep = createStep(
 
     const { data } = await query.graph({
       entity: "product",
-      fields: ["handle"],
+      fields: ["handle", "thumbnail"],
       filters: { id: input.product_id },
     })
 
@@ -33,7 +34,7 @@ const resolveProductStep = createStep(
       )
     }
 
-    return new StepResponse({ handle: product.handle })
+    return new StepResponse({ handle: product.handle, thumbnail: product.thumbnail })
   }
 )
 
@@ -52,11 +53,16 @@ const upsertStubStep = createStep(
       return new StepResponse({ skipped: true, handle: product.handle })
     }
 
-    const doc = buildProductStubDoc(product.handle)
+    const doc = buildProductStubDoc(product.handle, product.thumbnail)
 
     // createIfNotExists (NOT createOrReplace): seed the stub without ever
-    // overwriting marketing's editorial edits on re-runs.
+    // overwriting marketing's editorial edits on re-runs. medusaThumbnailUrl
+    // is Medusa-owned (Studio preview only), so it's kept fresh via a
+    // separate patch — safe even when the stub already existed.
     await client.createIfNotExists(doc)
+    if (doc.medusaThumbnailUrl) {
+      await client.patch(doc._id).set({ medusaThumbnailUrl: doc.medusaThumbnailUrl }).commit()
+    }
 
     return new StepResponse({ skipped: false, handle: product.handle, docId: doc._id })
   }
